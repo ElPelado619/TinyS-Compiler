@@ -12,6 +12,7 @@ public class LexicalAnalyzer {
     private int currentRow;
     private int currentColumn;
     private int currentCharacter;
+    private boolean canRead = true;
 
     private String currentLexeme;
     private FileScanner file;
@@ -33,31 +34,25 @@ public class LexicalAnalyzer {
      * @throws IOException
      */
     public Token nextToken() throws IOException {
-        updateInitialValues();
 
-        currentCharacter = file.readCharacter();
-        // concat current character to lexeme
+        if (canRead) {
+            updateInitialValues();
+            currentCharacter = file.readCharacter();
+            currentColumn++;
+        } else if (currentCharacter != 32) {
+            currentColumn--;
+        }
+
         currentLexeme = String.valueOf((char) currentCharacter);
 
-        // If current character is -1 (EOF)
         if (currentCharacter == -1) {
             return new Token("EOF", "", initialRow, initialColumn);
-
-        // If current character starts with an uppercase letter
         } else if (Character.isUpperCase(currentCharacter)) {
-            // Increase column number
-            currentColumn++;
             return s1();
-
-        // If current character starts with a lowercase letter
         } else if (Character.isLowerCase(currentCharacter)) {
-            // Increase column number
-            currentColumn++;
             return idMetAt();
-
         } else {
-            // Increase column number
-            currentColumn++;
+            canRead = true;
             return singleCharToken();
         }
 
@@ -70,22 +65,21 @@ public class LexicalAnalyzer {
      */
     public Token s1() throws IOException {
         currentCharacter = file.readCharacter();
+        currentColumn++;
         currentLexeme += (char) currentCharacter;
 
         if (currentCharacter == -1) {
             return new Token("EOF", "", initialRow, initialColumn);
         } else if (Character.isLowerCase(currentCharacter) || Character.isUpperCase(currentCharacter)) {
-            currentColumn++;
             return idClass();
-        // If current character is a space, a brace, bracket or parenthesis
-        } else if (Character.isWhitespace(currentCharacter) || currentCharacter == 40 || currentCharacter == 41 || currentCharacter == 123 || currentCharacter == 125 || currentCharacter == 91 || currentCharacter == 93) {
-            // Increase column number
-            currentColumn++;
+        } else if (isKnownSymbol()) {
             resizeLexeme();
             return new Token("idClass", currentLexeme, initialRow, initialColumn);
+        } else if (isLineBreak()) {
+            currentRow++;
+            currentColumn = 1;
+            return new Token("idClass", currentLexeme, initialRow, initialColumn);
         } else {
-            // Increase column number
-            currentColumn++;
             return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn);
         }
     }
@@ -97,27 +91,28 @@ public class LexicalAnalyzer {
      */
     public Token idClass() throws IOException {
         currentCharacter = file.readCharacter();
+        currentColumn++;
         currentLexeme += (char) currentCharacter;
 
         if (currentCharacter == -1) {
             return new Token("EOF", "", initialRow, initialColumn);
-        // If char is lowercase or uppercase return idClass
         } else if (Character.isLowerCase(currentCharacter) || Character.isUpperCase(currentCharacter)) {
-            currentColumn++;
             return idClass();
         // If current character is a number or an underscore
         } else if (Character.isDigit(currentCharacter) || currentCharacter == 95) {
-            currentColumn++;
             return s1();
         // If current character is a space, a brace, bracket or parenthesis
-        } else if (Character.isWhitespace(currentCharacter) || currentCharacter == 40 || currentCharacter == 41 || currentCharacter == 123 || currentCharacter == 125 || currentCharacter == 91 || currentCharacter == 93) {
-            // Increase column number
-            currentColumn++;
+        } else if (isKnownSymbol()) {
             resizeLexeme();
+            canRead = false;
+            return new Token("idClass", currentLexeme, initialRow, initialColumn);
+        } else if (isLineBreak()) {
+            currentRow++;
+            currentColumn = 1;
             return new Token("idClass", currentLexeme, initialRow, initialColumn);
         } else {
-            // Increase column number
-            currentColumn++;
+            
+            
             return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn);
         }
     }
@@ -129,66 +124,79 @@ public class LexicalAnalyzer {
      */
     public Token idMetAt() throws IOException {
         currentCharacter = file.readCharacter();
+        currentColumn++;
         currentLexeme += (char) currentCharacter;
 
         if (currentCharacter == -1) {
             return new Token("EOF", "", initialRow, initialColumn);
-        // If char is lowercase, uppercase, digit or underscore, return idMetAt
         } else if (Character.isLowerCase(currentCharacter) || Character.isUpperCase(currentCharacter)
                 || Character.isDigit(currentCharacter) || currentCharacter == 95) {
-            currentColumn++;
             return idMetAt();
-
-        // If current character is a space
-        } else if (Character.isWhitespace(currentCharacter)) {
-            // Increase column number
-            currentColumn++;
+        } else if (isKnownSymbol()) {
             resizeLexeme();
+            canRead = false;
+            return new Token("idMetAt", currentLexeme, initialRow, initialColumn);
+        } else if (isLineBreak()) {
+            currentRow++;
+            currentColumn = 1;
             return new Token("idMetAt", currentLexeme, initialRow, initialColumn);
         } else {
-            // Increase column number
-            currentColumn++;
             return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn);
         }
     }
 
     public Token singleCharToken() throws IOException {
-
         // switch to check for single character tokens
         switch (currentCharacter) {
+            // enter or return
+            case 10, 13 -> {
+                currentRow++;
+                currentColumn = 1;
+                return nextToken();
+            }
             // space
             case 32 -> {
-                currentColumn++;
+                
                 return nextToken();
             }
             // left parenthesis
             case 40 -> {
-                currentColumn++;
-                return new Token("LPAREN", currentLexeme, initialRow, initialColumn);
+                
+                return new Token("lParen", currentLexeme, initialRow, initialColumn);
             }
+            // right parenthesis
             case 41 -> {
-                currentColumn++;
-                return new Token("RPAREN", currentLexeme, initialRow, initialColumn);
+                
+                return new Token("rParen", currentLexeme, initialRow, initialColumn);
+            }
+            // comma
+            case 44 -> {
+                
+                return new Token("comma", currentLexeme, initialRow, initialColumn);
+            }
+            // semicolon
+            case 59 -> {
+                
+                return new Token("semicolon", currentLexeme, initialRow, initialColumn);
             }
             case 123 -> {
-                currentColumn++;
+                
                 return new Token("lBrace", currentLexeme, initialRow, initialColumn);
             }
             case 125 -> {
-                currentColumn++;
+                
                 return new Token("rBrace", currentLexeme, initialRow, initialColumn);
             }
             case 91 -> {
-                currentColumn++;
-                return new Token("LBRACKET", currentLexeme, initialRow, initialColumn);
+                
+                return new Token("lBracket", currentLexeme, initialRow, initialColumn);
             }
             case 93 -> {
-                currentColumn++;
-                return new Token("RBRACKET", currentLexeme, initialRow, initialColumn);
+                
+                return new Token("rBracket", currentLexeme, initialRow, initialColumn);
             }
             default -> {
-                // Increase column number
-                currentColumn++;
+
                 return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn);
             }
         }
@@ -201,6 +209,22 @@ public class LexicalAnalyzer {
     public void updateInitialValues() {
         initialRow = currentRow;
         initialColumn = currentColumn;
+    }
+
+    public boolean isKnownSymbol() {
+        return currentCharacter == 40
+                || currentCharacter == 41
+                || currentCharacter == 123
+                || currentCharacter == 125
+                || currentCharacter == 91
+                || currentCharacter == 93
+                || currentCharacter == 59
+                || currentCharacter == 44
+                || currentCharacter == 32;
+    }
+
+    public boolean isLineBreak() {
+        return currentCharacter == 10 || currentCharacter == 13;
     }
 
 }
