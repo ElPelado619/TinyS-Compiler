@@ -14,7 +14,7 @@ public class LexicalAnalyzer {
     private int currentCharacter;
     private boolean canRead = true;
     private boolean isString = false;
-    private boolean isMultiComment = false;
+    private boolean isMultiComment = false; // Tal vez podria sacarlo
 
     private String currentLexeme;
     private FileScanner file;
