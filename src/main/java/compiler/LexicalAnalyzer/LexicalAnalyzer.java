@@ -13,6 +13,7 @@ public class LexicalAnalyzer {
     private int currentColumn;
     private int currentCharacter;
     private boolean canRead = true;
+    private boolean isString = false;
 
     private String currentLexeme;
     private FileScanner file;
@@ -51,9 +52,14 @@ public class LexicalAnalyzer {
             return s1();
         } else if (Character.isLowerCase(currentCharacter)) {
             return idMetAt();
+        } else if (currentCharacter == 34) { // Agregue esta parte
+            isString = true;
+            return StrLiteral();
+        } else if (currentCharacter == 47) {
+            return s7();
         } else {
-            canRead = true;
-            return singleCharToken();
+                canRead = true;
+                return singleCharToken();
         }
 
     }
@@ -82,6 +88,24 @@ public class LexicalAnalyzer {
         } else {
             return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn);
         }
+    }
+
+    /**
+     * Estado que reconoce un comentario simple, o un comentario multilinea
+     * @return
+     * @throws IOException
+     * TODO falta que reconozca comentarios multilinea
+     */
+    public Token s7() throws IOException {
+        currentCharacter = file.readCharacter();
+        currentColumn++;
+        currentLexeme += (char) currentCharacter;
+        if (currentCharacter == 47) {
+            return SingleLineComment();
+        } else {
+            return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn); // si solo esta la barra sin nada extra
+        }
+
     }
 
     /**
@@ -202,8 +226,60 @@ public class LexicalAnalyzer {
         }
     }
 
+    /**
+     * Estado que reconoce un comentario simple
+     * @return
+     * @throws IOException
+     * FIXME: ¿Haria falta quitar las dobles barras a la hora de almacenar el lexema?
+     */
+    public Token SingleLineComment() throws IOException {
+        currentCharacter = file.readCharacter();
+        currentColumn++;
+
+        if (currentCharacter == -1) {
+            return new Token("EOF", "", initialRow, initialColumn);
+        } else if (currentCharacter == 10) { // ASCII 10 = salto de línea (\n)
+            currentRow++;
+            currentColumn = 1;
+            return new Token("SingleLineComment", currentLexeme, initialRow, initialColumn);
+        }
+
+        currentLexeme += (char) currentCharacter;
+        return SingleLineComment();
+    }
+
+
+    /**
+     * Estado que reconoce un String.
+     * @return Token
+     * @throws IOException
+     * TODO: Agregar reconocimiento de caracteres escapados \", \', /n, /t
+     */
+    public Token StrLiteral() throws IOException { // Basic Implementation of StrLiteral, still dosn't recognize //, /n, /t, \", \'
+        currentCharacter = file.readCharacter();
+        currentColumn++;
+        currentLexeme += (char) currentCharacter;
+
+
+        if (currentCharacter == -1) {
+            return new Token("EOF", "", initialRow, initialColumn);
+        } else if (isString == false) { // Close String
+            resizeStrLexeme();
+            return new Token("StrLiteral", currentLexeme, initialRow, initialColumn);
+        } else if (currentCharacter == 34) {
+            isString = false;
+            return StrLiteral();
+        } else {
+            return StrLiteral();
+        }
+    }
+
     public void resizeLexeme() {
         currentLexeme = currentLexeme.substring(0, currentLexeme.length() - 1);
+    }
+
+    public void resizeStrLexeme() { // Specific implementation for strings (avoids repeated double quotes)
+        currentLexeme = currentLexeme.substring(1, currentLexeme.length() - 2);
     }
 
     public void updateInitialValues() {

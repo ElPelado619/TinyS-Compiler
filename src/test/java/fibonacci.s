@@ -1,4 +1,5 @@
-class Fibonacci {
+class Fibonacci { // comment
+    pub Str " Esto es una prueba de string ";
     pub Int suma;
     pub Int i,j;
 }
