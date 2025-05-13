@@ -14,6 +14,7 @@ public class LexicalAnalyzer {
     private int currentCharacter;
     private boolean canRead = true;
     private boolean isString = false;
+    private boolean isMultiComment = false;
 
     private String currentLexeme;
     private FileScanner file;
@@ -102,6 +103,9 @@ public class LexicalAnalyzer {
         currentLexeme += (char) currentCharacter;
         if (currentCharacter == 47) {
             return SingleLineComment();
+        } else if (currentCharacter == 42) {
+            isMultiComment = true;
+            return MultiLineComment();
         } else {
             return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn); // si solo esta la barra sin nada extra
         }
@@ -228,9 +232,10 @@ public class LexicalAnalyzer {
 
     /**
      * Estado que reconoce un comentario simple
-     * @return
+     * @return un Token del tipo SingleComment
      * @throws IOException
      * FIXME: ¿Haria falta quitar las dobles barras a la hora de almacenar el lexema?
+     * TODO: Falta agregar que reconozca caracteres escapados
      */
     public Token SingleLineComment() throws IOException {
         currentCharacter = file.readCharacter();
@@ -248,6 +253,33 @@ public class LexicalAnalyzer {
         return SingleLineComment();
     }
 
+
+    /**
+     * Estado que reconoce un comentario multilinea
+     * @return un Token del tipo MultiLineComment
+     * @throws IOException
+     * FIXME: ¿Haria falta quitar los delimitadores, tabulaciones y saltos de linea a la hora de almacenar el lexema?
+     * TODO: Falta agregar que reconozca caracteres escapados
+     */
+    public Token MultiLineComment() throws IOException {
+        currentCharacter = file.readCharacter();
+        currentColumn++;
+        currentLexeme += (char) currentCharacter;
+
+        if (currentCharacter == -1) {
+            return new Token("EOF", "", initialRow, initialColumn);
+        } else if (currentCharacter == 10) { // ASCII 10 = salto de línea (\n)
+            currentRow++;
+            currentColumn = 1;
+            return MultiLineComment();
+        } else if (currentCharacter == 42) {
+            isMultiComment = false;
+            return MultiLineComment();
+        } else if (!isMultiComment && currentCharacter == 47) {
+            return new Token("MultiLineComment", currentLexeme, initialRow, initialColumn);
+        }
+        return MultiLineComment();
+    }
 
     /**
      * Estado que reconoce un String.

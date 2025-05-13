@@ -1,5 +1,7 @@
 class Fibonacci { // comment
     pub Str " Esto es una prueba de string ";
+    /* Comentario       Multilinea
+     de prueba */
     pub Int suma;
     pub Int i,j;
 }
