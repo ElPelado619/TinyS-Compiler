@@ -5,334 +5,240 @@ import compiler.FileScanner;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
+/**
+ * Clase LexicalAnalyzer que se encarga de analizar léxicamente un archivo fuente.
+ * Esta clase lee el archivo carácter por carácter y genera tokens basados en las reglas del lenguaje.
+ */
 public class LexicalAnalyzer {
 
-    private int initialRow;
-    private int initialColumn;
-    private int currentRow;
-    private int currentColumn;
+    private int row;
+    private int column;
     private int currentCharacter;
-    private boolean canRead = true;
-    private boolean isString = false;
-    private boolean isMultiComment = false; // Tal vez podria sacarlo
+    private final StringBuilder currentLexeme = new StringBuilder();
+    private final FileScanner fileScanner;
 
-    private String currentLexeme;
-    private FileScanner file;
-
+    /**
+     * Constructor que inicializa el analizador léxico.
+     * @param filePath Ruta del archivo a analizar.
+     * @throws FileNotFoundException Si el archivo no se encuentra.
+     */
     public LexicalAnalyzer(String filePath) throws FileNotFoundException {
-        this.initialRow = 1;
-        this.initialColumn = 1;
-        this.currentRow = 1;
-        this.currentColumn = 1;
-        this.currentCharacter = 0;
-        this.currentLexeme = "";
-
-        this.file = new FileScanner(filePath);
+        this.row = 1;
+        this.column = 1;
+        this.fileScanner = new FileScanner(filePath);
+        // Empieza leyendo el primer carácter del archivo
+        this.currentCharacter = readCharacter();
     }
 
     /**
-     * Función que devuelve el siguiente token.
-     * @return Token
-     * @throws IOException
+     * Metodo que lee el siguiente carácter del archivo y actualiza la posición de fila y columna.
+     * @return El carácter leído -1 si se ha llegado al final del archivo.
      */
-    public Token nextToken() throws IOException {
+    private int readCharacter() {
+        try {
+            // Lee el siguiente carácter del archivo
+            int charRead = fileScanner.readCharacter();
+            // Si es un salto de línea, actualiza la fila y resetea la columna
+            if (charRead == '\n') {
+                row++;
+                column = 1;
+            } else {
+                column++;
+            }
+            return charRead;
+        } catch (IOException e) {
+            // Final del archivo o error de lectura
+            return -1;
+        }
+    }
 
-        if (canRead) {
-            updateInitialValues();
-            currentCharacter = file.readCharacter();
-            currentColumn++;
-        } else if (currentCharacter != 32) {
-            currentColumn--;
+    /**
+     * Metodo que obtiene el siguiente token del archivo.
+     * @return El siguiente token encontrado.
+     */
+    public Token nextToken() {
+        currentLexeme.setLength(0);
+        int initialRow = row;
+        int initialColumn = column - 1;
+
+        // Salta espacios en blanco y actualiza la posición
+        while (Character.isWhitespace(currentCharacter)) {
+            initialRow = row;
+            initialColumn = column;
+            currentCharacter = readCharacter();
         }
 
-        currentLexeme = String.valueOf((char) currentCharacter);
-
+        // Si el carácter actual es -1, significa que hemos llegado al final del archivo
         if (currentCharacter == -1) {
-            return new Token("EOF", "", initialRow, initialColumn);
-        } else if (Character.isUpperCase(currentCharacter)) {
-            return s1();
+            return new Token("EOF", "", row, column);
+        }
+
+        // Añade el carácter actual al lexema
+        currentLexeme.append((char) currentCharacter);
+
+        // caracter -> Mayúscula (idClass)
+        if (Character.isUpperCase(currentCharacter)) {
+            return processIdClass();
+        // caracter -> Minúscula (idMetAt)
         } else if (Character.isLowerCase(currentCharacter)) {
-            return idMetAt();
-        } else if (currentCharacter == 34) { // Agregue esta parte
-            isString = true;
-            return StrLiteral();
-        } else if (currentCharacter == 47) {
-            return s7();
+            return processIdMethodAttribute();
+        // caracter -> Comilla (string literal)
+        } else if (currentCharacter == '"') {
+            return processStringLiteral();
+        // caracter -> / (comentario o división)
+        } else if (currentCharacter == '/') {
+            return processCommentOrDivision();
+        // de lo contrario, procesar como un token de un solo carácter
         } else {
-                canRead = true;
-                return singleCharToken();
+            return processSingleCharacterToken(initialRow, initialColumn);
         }
-
     }
 
     /**
-     * Estado que reconoce un posible identificador de Clase.
-     * @return Token
-     * @throws IOException
+     * Procesa un identificador de clase (idClass).
+     * Un idClass comienza con una letra mayúscula y puede contener letras, dígitos o guiones bajos.
+     * @return Un token representando el idClass.
      */
-    public Token s1() throws IOException {
-        currentCharacter = file.readCharacter();
-        currentColumn++;
-        currentLexeme += (char) currentCharacter;
+    private Token processIdClass() {
+        int initialRow = row;
+        int initialColumn = column - 1;
+        currentCharacter = readCharacter();
+        // Continúa leyendo caracteres mientras sean letras, dígitos o guiones bajos
+        while (Character.isLetterOrDigit(currentCharacter) || currentCharacter == '_') {
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
+        }
+        return new Token("idClass", currentLexeme.toString(), initialRow, initialColumn);
+    }
 
-        if (currentCharacter == -1) {
-            return new Token("EOF", "", initialRow, initialColumn);
-        } else if (Character.isLowerCase(currentCharacter) || Character.isUpperCase(currentCharacter)) {
-            return idClass();
-        } else if (isKnownSymbol()) {
-            resizeLexeme();
-            return new Token("idClass", currentLexeme, initialRow, initialColumn);
-        } else if (isLineBreak()) {
-            currentRow++;
-            currentColumn = 1;
-            return new Token("idClass", currentLexeme, initialRow, initialColumn);
+    /**
+     * Procesa un identificador de metodo o atributo (idMetAt).
+     * Un idMetAt comienza con una letra minúscula y puede contener letras, dígitos o guiones bajos.
+     * @return Un token representando el idMetAt.
+     */
+    private Token processIdMethodAttribute() {
+        int initialRow = row;
+        int initialColumn = column - 1;
+        currentCharacter = readCharacter();
+        // Continúa leyendo caracteres mientras sean letras, dígitos o guiones bajos
+        while (Character.isLetterOrDigit(currentCharacter) || currentCharacter == '_') {
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
+        }
+        return new Token("idMetAt", currentLexeme.toString(), initialRow, initialColumn);
+    }
+
+    /**
+     * Procesa un literal de cadena (string literal).
+     * Un string literal comienza y termina con comillas dobles.
+     * @return Un token representando el string literal.
+     */
+    private Token processStringLiteral() {
+        int initialRow = row;
+        int initialColumn = column - 1;
+        currentLexeme.setLength(0); // Clear the initial quote
+        currentCharacter = readCharacter();
+        while (currentCharacter != '"' && currentCharacter != -1) {
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
+        }
+        if (currentCharacter == '"') {
+            currentCharacter = readCharacter(); // Consume the closing quote
+        }
+        return new Token("StrLiteral", currentLexeme.toString(), initialRow, initialColumn);
+    }
+
+    /**
+     * Procesa un comentario o un operador de división.
+     * Si encuentra un '/', verifica si es el inicio de un comentario de una línea o de varias líneas.
+     * @return Un token representando el comentario o el operador de división.
+     */
+    private Token processCommentOrDivision() {
+        int initialRow = row;
+        int initialColumn = column - 1;
+        currentCharacter = readCharacter();
+        if (currentCharacter == '/') {
+            return processSingleLineComment(initialRow, initialColumn);
+        } else if (currentCharacter == '*') {
+            return processMultiLineComment(initialRow, initialColumn);
         } else {
-            return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn);
+            // If it's just a '/', it could be a division operator or an unknown token
+            return new Token("op_div", "/", initialRow, initialColumn);
         }
     }
 
     /**
-     * Estado que reconoce un comentario simple, o un comentario multilinea
-     * @return
-     * @throws IOException
-     * TODO falta que reconozca comentarios multilinea
+     * Procesa un comentario de una sola línea.
+     * Un comentario de una sola línea comienza con "//" y termina con un salto de línea.
+     * @return Un token representando el comentario de una sola línea.
      */
-    public Token s7() throws IOException {
-        currentCharacter = file.readCharacter();
-        currentColumn++;
-        currentLexeme += (char) currentCharacter;
-        if (currentCharacter == 47) {
-            return SingleLineComment();
-        } else if (currentCharacter == 42) {
-            isMultiComment = true;
-            return MultiLineComment();
-        } else {
-            return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn); // si solo esta la barra sin nada extra
+    private Token processSingleLineComment(int initialRow, int initialColumn) {
+        currentLexeme.append('/');
+        currentCharacter = readCharacter();
+        while (currentCharacter != '\n' && currentCharacter != -1) {
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
         }
-
+        return new Token("SingleLineComment", currentLexeme.toString(), initialRow, initialColumn);
     }
 
     /**
-     * Estado que reconoce un identificador de Clase.
-     * @return Token
-     * @throws IOException
+     * Procesa un comentario de varias líneas.
+     * Un comentario de varias líneas comienza con / * y termina con * /
+     * @return Un token representando el comentario de varias líneas.
      */
-    public Token idClass() throws IOException {
-        currentCharacter = file.readCharacter();
-        currentColumn++;
-        currentLexeme += (char) currentCharacter;
-
-        if (currentCharacter == -1) {
-            return new Token("EOF", "", initialRow, initialColumn);
-        } else if (Character.isLowerCase(currentCharacter) || Character.isUpperCase(currentCharacter)) {
-            return idClass();
-        // If current character is a number or an underscore
-        } else if (Character.isDigit(currentCharacter) || currentCharacter == 95) {
-            return s1();
-        // If current character is a space, a brace, bracket or parenthesis
-        } else if (isKnownSymbol()) {
-            resizeLexeme();
-            canRead = false;
-            return new Token("idClass", currentLexeme, initialRow, initialColumn);
-        } else if (isLineBreak()) {
-            currentRow++;
-            currentColumn = 1;
-            return new Token("idClass", currentLexeme, initialRow, initialColumn);
-        } else {
-            
-            
-            return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn);
-        }
-    }
-
-    /**
-     * Estado que puede reconocer un identificador de Objeto/Metodo/Atributo.
-     * @return Token
-     * @throws IOException
-     */
-    public Token idMetAt() throws IOException {
-        currentCharacter = file.readCharacter();
-        currentColumn++;
-        currentLexeme += (char) currentCharacter;
-
-        if (currentCharacter == -1) {
-            return new Token("EOF", "", initialRow, initialColumn);
-        } else if (Character.isLowerCase(currentCharacter) || Character.isUpperCase(currentCharacter)
-                || Character.isDigit(currentCharacter) || currentCharacter == 95) {
-            return idMetAt();
-        } else if (isKnownSymbol()) {
-            resizeLexeme();
-            canRead = false;
-            return new Token("idMetAt", currentLexeme, initialRow, initialColumn);
-        } else if (isLineBreak()) {
-            currentRow++;
-            currentColumn = 1;
-            return new Token("idMetAt", currentLexeme, initialRow, initialColumn);
-        } else {
-            return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn);
-        }
-    }
-
-    public Token singleCharToken() throws IOException {
-        // switch to check for single character tokens
-        switch (currentCharacter) {
-            // enter or return
-            case 10, 13 -> {
-                currentRow++;
-                currentColumn = 1;
-                return nextToken();
+    private Token processMultiLineComment(int initialRow, int initialColumn) {
+        currentLexeme.append('*');
+        currentCharacter = readCharacter();
+        while (true) {
+            if (currentCharacter == -1) {
+                // Unterminated comment
+                return new Token("UNKNOWN", currentLexeme.toString(), initialRow, initialColumn);
             }
-            // space
-            case 32 -> {
-                
-                return nextToken();
-            }
-            // left parenthesis
-            case 40 -> {
-                
-                return new Token("lParen", currentLexeme, initialRow, initialColumn);
-            }
-            // right parenthesis
-            case 41 -> {
-                
-                return new Token("rParen", currentLexeme, initialRow, initialColumn);
-            }
-            // comma
-            case 44 -> {
-                
-                return new Token("comma", currentLexeme, initialRow, initialColumn);
-            }
-            // semicolon
-            case 59 -> {
-                
-                return new Token("semicolon", currentLexeme, initialRow, initialColumn);
-            }
-            case 123 -> {
-                
-                return new Token("lBrace", currentLexeme, initialRow, initialColumn);
-            }
-            case 125 -> {
-                
-                return new Token("rBrace", currentLexeme, initialRow, initialColumn);
-            }
-            case 91 -> {
-                
-                return new Token("lBracket", currentLexeme, initialRow, initialColumn);
-            }
-            case 93 -> {
-                
-                return new Token("rBracket", currentLexeme, initialRow, initialColumn);
-            }
-            default -> {
-
-                return new Token("UNKNOWN", String.valueOf((char) currentCharacter), initialRow, initialColumn);
+            if (currentCharacter == '*') {
+                currentLexeme.append((char) currentCharacter);
+                currentCharacter = readCharacter();
+                if (currentCharacter == '/') {
+                    currentLexeme.append((char) currentCharacter);
+                    currentCharacter = readCharacter();
+                    return new Token("MultiLineComment", currentLexeme.toString(), initialRow, initialColumn);
+                }
+            } else {
+                currentLexeme.append((char) currentCharacter);
+                currentCharacter = readCharacter();
             }
         }
     }
 
     /**
-     * Estado que reconoce un comentario simple
-     * @return un Token del tipo SingleComment
-     * @throws IOException
-     * FIXME: ¿Haria falta quitar las dobles barras a la hora de almacenar el lexema?
-     * TODO: Falta agregar que reconozca caracteres escapados
+     * Procesa un token de un solo carácter.
+     * Dependiendo del carácter, devuelve el token correspondiente.
+     * @param initialRow Fila inicial del token.
+     * @param initialColumn Columna inicial del token.
+     * @return Un token representando el carácter leído.
      */
-    public Token SingleLineComment() throws IOException {
-        currentCharacter = file.readCharacter();
-        currentColumn++;
-
-        if (currentCharacter == -1) {
-            return new Token("EOF", "", initialRow, initialColumn);
-        } else if (currentCharacter == 10) { // ASCII 10 = salto de línea (\n)
-            currentRow++;
-            currentColumn = 1;
-            return new Token("SingleLineComment", currentLexeme, initialRow, initialColumn);
-        }
-
-        currentLexeme += (char) currentCharacter;
-        return SingleLineComment();
-    }
-
-
-    /**
-     * Estado que reconoce un comentario multilinea
-     * @return un Token del tipo MultiLineComment
-     * @throws IOException
-     * FIXME: ¿Haria falta quitar los delimitadores, tabulaciones y saltos de linea a la hora de almacenar el lexema?
-     * TODO: Falta agregar que reconozca caracteres escapados
-     */
-    public Token MultiLineComment() throws IOException {
-        currentCharacter = file.readCharacter();
-        currentColumn++;
-        currentLexeme += (char) currentCharacter;
-
-        if (currentCharacter == -1) {
-            return new Token("EOF", "", initialRow, initialColumn);
-        } else if (currentCharacter == 10) { // ASCII 10 = salto de línea (\n)
-            currentRow++;
-            currentColumn = 1;
-            return MultiLineComment();
-        } else if (currentCharacter == 42) {
-            isMultiComment = false;
-            return MultiLineComment();
-        } else if (!isMultiComment && currentCharacter == 47) {
-            return new Token("MultiLineComment", currentLexeme, initialRow, initialColumn);
-        }
-        return MultiLineComment();
-    }
-
-    /**
-     * Estado que reconoce un String.
-     * @return Token
-     * @throws IOException
-     * TODO: Agregar reconocimiento de caracteres escapados \", \', /n, /t
-     */
-    public Token StrLiteral() throws IOException { // Basic Implementation of StrLiteral, still dosn't recognize //, /n, /t, \", \'
-        currentCharacter = file.readCharacter();
-        currentColumn++;
-        currentLexeme += (char) currentCharacter;
-
-
-        if (currentCharacter == -1) {
-            return new Token("EOF", "", initialRow, initialColumn);
-        } else if (isString == false) { // Close String
-            resizeStrLexeme();
-            return new Token("StrLiteral", currentLexeme, initialRow, initialColumn);
-        } else if (currentCharacter == 34) {
-            isString = false;
-            return StrLiteral();
-        } else {
-            return StrLiteral();
+    private Token processSingleCharacterToken(int initialRow, int initialColumn) {
+        char character = (char) currentCharacter;
+        currentCharacter = readCharacter();
+        switch (character) {
+            case '(':
+                return new Token("lParen", "(", initialRow, initialColumn);
+            case ')':
+                return new Token("rParen", ")", initialRow, initialColumn);
+            case '{':
+                return new Token("lBrace", "{", initialRow, initialColumn);
+            case '}':
+                return new Token("rBrace", "}", initialRow, initialColumn);
+            case '[':
+                return new Token("lBracket", "[", initialRow, initialColumn);
+            case ']':
+                return new Token("rBracket", "]", initialRow, initialColumn);
+            case ',':
+                return new Token("comma", ",", initialRow, initialColumn);
+            case ';':
+                return new Token("semicolon", ";", initialRow, initialColumn);
+            default:
+                return new Token("UNKNOWN", String.valueOf(character), initialRow, initialColumn);
         }
     }
-
-    public void resizeLexeme() {
-        currentLexeme = currentLexeme.substring(0, currentLexeme.length() - 1);
-    }
-
-    public void resizeStrLexeme() { // Specific implementation for strings (avoids repeated double quotes)
-        currentLexeme = currentLexeme.substring(1, currentLexeme.length() - 2);
-    }
-
-    public void updateInitialValues() {
-        initialRow = currentRow;
-        initialColumn = currentColumn;
-    }
-
-    public boolean isKnownSymbol() {
-        return currentCharacter == 40
-                || currentCharacter == 41
-                || currentCharacter == 123
-                || currentCharacter == 125
-                || currentCharacter == 91
-                || currentCharacter == 93
-                || currentCharacter == 59
-                || currentCharacter == 44
-                || currentCharacter == 32;
-    }
-
-    public boolean isLineBreak() {
-        return currentCharacter == 10 || currentCharacter == 13;
-    }
-
 }
