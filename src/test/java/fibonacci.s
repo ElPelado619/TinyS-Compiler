@@ -8,8 +8,8 @@ class Fibonacci { // comment
 impl Fibonacci {
     fn Int sucesion_fib(Int n){
         i=0; j=0; suma=0;
-        while (i<= n){
-            if (i==0){
+        while (i <= n){
+            if (i == 0){
                 (imprimo_numero(i));
                 (imprimo_sucesion(suma)); }
             else

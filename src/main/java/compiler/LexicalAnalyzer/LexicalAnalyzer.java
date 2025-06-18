@@ -4,6 +4,9 @@ import compiler.FileScanner;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Clase LexicalAnalyzer que se encarga de analizar léxicamente un archivo fuente.
@@ -16,6 +19,15 @@ public class LexicalAnalyzer {
     private int currentCharacter;
     private final StringBuilder currentLexeme = new StringBuilder();
     private final FileScanner fileScanner;
+
+    /**
+     * Conjunto de palabras clave del lenguaje.
+     * Estas palabras no pueden ser utilizadas como identificadores.
+     */
+    private static final Set<String> KEYWORDS = new HashSet<>(Arrays.asList(
+            "class", "impl", "else", "false", "if", "ret", "while", "true", "nil", "new",
+            "fn", "st", "pub", "self", "div", "void", "start"
+    ));
 
     /**
      * Constructor que inicializa el analizador léxico.
@@ -81,13 +93,28 @@ public class LexicalAnalyzer {
             return processIdClass();
         // caracter -> Minúscula (idMetAt)
         } else if (Character.isLowerCase(currentCharacter)) {
-            return processIdMethodAttribute();
+            return processIdMethodAttributeOrKeyword();
         // caracter -> Comilla (string literal)
         } else if (currentCharacter == '"') {
             return processStringLiteral();
         // caracter -> / (comentario o división)
         } else if (currentCharacter == '/') {
             return processCommentOrDivision();
+        // caracter -> Signo igual (asignación o comparación)
+        } else if (currentCharacter == '=') {
+            return processEqualsOrAssign();
+        // caracter -> Digito (literal entero o doble)
+        } else if (Character.isDigit(currentCharacter)) {
+            return processIntOrDoubleLiteral();
+        // caracter -> Menor que (<) o menor o igual que (<=)
+        } else if (currentCharacter == '<') {
+            return processLessOrLessEqual();
+        // caracter -> Mayor que (>) o mayor o igual que (>=)
+        } else if (currentCharacter == '>') {
+            return processGreaterOrGreaterEqual();
+        // caracter -> Suma (+) o incremento (++)
+        } else if (currentCharacter == '+') {
+            return processAddOrIncrement();
         // de lo contrario, procesar como un token de un solo carácter
         } else {
             return processSingleCharacterToken(initialRow, initialColumn);
@@ -116,16 +143,26 @@ public class LexicalAnalyzer {
      * Un idMetAt comienza con una letra minúscula y puede contener letras, dígitos o guiones bajos.
      * @return Un token representando el idMetAt.
      */
-    private Token processIdMethodAttribute() {
+    private Token processIdMethodAttributeOrKeyword() {
         int initialRow = row;
         int initialColumn = column - 1;
+
         currentCharacter = readCharacter();
-        // Continúa leyendo caracteres mientras sean letras, dígitos o guiones bajos
         while (Character.isLetterOrDigit(currentCharacter) || currentCharacter == '_') {
             currentLexeme.append((char) currentCharacter);
             currentCharacter = readCharacter();
         }
-        return new Token("idMetAt", currentLexeme.toString(), initialRow, initialColumn);
+
+        String lexema = currentLexeme.toString();
+        String nombreToken;
+
+        if (KEYWORDS.contains(lexema)) {
+            nombreToken = lexema;
+        } else {
+            nombreToken = "idMetAt";
+        }
+
+        return new Token(nombreToken, lexema, initialRow, initialColumn);
     }
 
     /**
@@ -164,6 +201,112 @@ public class LexicalAnalyzer {
         } else {
             // If it's just a '/', it could be a division operator or an unknown token
             return new Token("op_div", "/", initialRow, initialColumn);
+        }
+    }
+
+    /**
+     * Procesa un operador de igualdad o asignación.
+     * Si encuentra un '=', verifica si es el inicio de una comparación de igualdad.
+     * @return Un token representando el operador de igualdad o asignación.
+     */
+    private Token processEqualsOrAssign() {
+        int initialRow = row;
+        int initialColumn = column - 1;
+        currentCharacter = readCharacter();
+        if (currentCharacter == '=') {
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
+            return new Token("equalsOp", currentLexeme.toString(), initialRow, initialColumn);
+        } else {
+            return new Token("assignOp", "=", initialRow, initialColumn);
+        }
+    }
+
+    /**
+     * Procesa un literal entero o de punto flotante.
+     * Un literal entero consiste en dígitos, mientras que un literal de punto flotante
+     * contiene un punto decimal seguido de más dígitos.
+     * @return Un token representando el literal entero o de punto flotante.
+     */
+    private Token processIntOrDoubleLiteral() {
+        int initialRow = row;
+        int initialColumn = column - 1;
+        boolean isDouble = false;
+
+        currentCharacter = readCharacter();
+        // Read digits
+        while (Character.isDigit(currentCharacter)) {
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
+        }
+
+        // Check for decimal point
+        if (currentCharacter == '.') {
+            isDouble = true;
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
+            // Read digits after decimal point
+            while (Character.isDigit(currentCharacter)) {
+                currentLexeme.append((char) currentCharacter);
+                currentCharacter = readCharacter();
+            }
+        }
+
+        String tokenType = isDouble ? "doubleLiteral" : "intLiteral";
+        return new Token(tokenType, currentLexeme.toString(), initialRow, initialColumn);
+    }
+
+    /**
+     * Procesa un operador de menor o menor que.
+     * Si encuentra un '<', verifica si es el inicio de una comparación de menor o menor o igual.
+     * @return Un token representando el operador de menor o menor que.
+     */
+    private Token processLessOrLessEqual() {
+        int initialRow = row;
+        int initialColumn = column - 1;
+        currentCharacter = readCharacter();
+        if (currentCharacter == '=') {
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
+            return new Token("lessEqOp", currentLexeme.toString(), initialRow, initialColumn);
+        } else {
+            return new Token("lessOp", "<", initialRow, initialColumn);
+        }
+    }
+
+    /**
+     * Procesa un operador de mayor o mayor que.
+     * Si encuentra un '>', verifica si es el inicio de una comparación de mayor o mayor o igual.
+     * @return Un token representando el operador de mayor o mayor que.
+     */
+    private Token processGreaterOrGreaterEqual() {
+        int initialRow = row;
+        int initialColumn = column - 1;
+        currentCharacter = readCharacter();
+        if (currentCharacter == '=') {
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
+            return new Token("greaterEqOp", currentLexeme.toString(), initialRow, initialColumn);
+        } else {
+            return new Token("greaterOp", ">", initialRow, initialColumn);
+        }
+    }
+
+    /**
+     * Procesa un operador de suma o incremento.
+     * Si encuentra un '+', verifica si es el inicio de un operador de incremento.
+     * @return Un token representando el operador de suma o incremento.
+     */
+    private Token processAddOrIncrement() {
+        int initialRow = row;
+        int initialColumn = column - 1;
+        currentCharacter = readCharacter();
+        if (currentCharacter == '+') {
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
+            return new Token("incrementOp", currentLexeme.toString(), initialRow, initialColumn);
+        } else {
+            return new Token("addOp", "+", initialRow, initialColumn);
         }
     }
 
@@ -220,25 +363,17 @@ public class LexicalAnalyzer {
     private Token processSingleCharacterToken(int initialRow, int initialColumn) {
         char character = (char) currentCharacter;
         currentCharacter = readCharacter();
-        switch (character) {
-            case '(':
-                return new Token("lParen", "(", initialRow, initialColumn);
-            case ')':
-                return new Token("rParen", ")", initialRow, initialColumn);
-            case '{':
-                return new Token("lBrace", "{", initialRow, initialColumn);
-            case '}':
-                return new Token("rBrace", "}", initialRow, initialColumn);
-            case '[':
-                return new Token("lBracket", "[", initialRow, initialColumn);
-            case ']':
-                return new Token("rBracket", "]", initialRow, initialColumn);
-            case ',':
-                return new Token("comma", ",", initialRow, initialColumn);
-            case ';':
-                return new Token("semicolon", ";", initialRow, initialColumn);
-            default:
-                return new Token("UNKNOWN", String.valueOf(character), initialRow, initialColumn);
-        }
+        return switch (character) {
+            case '(' -> new Token("lParen", "(", initialRow, initialColumn);
+            case ')' -> new Token("rParen", ")", initialRow, initialColumn);
+            case '{' -> new Token("lBrace", "{", initialRow, initialColumn);
+            case '}' -> new Token("rBrace", "}", initialRow, initialColumn);
+            case '[' -> new Token("lBracket", "[", initialRow, initialColumn);
+            case ']' -> new Token("rBracket", "]", initialRow, initialColumn);
+            case ',' -> new Token("comma", ",", initialRow, initialColumn);
+            case ';' -> new Token("semicolon", ";", initialRow, initialColumn);
+            case '.' -> new Token("dot", ".", initialRow, initialColumn);
+            default -> new Token("UNKNOWN", String.valueOf(character), initialRow, initialColumn);
+        };
     }
 }
