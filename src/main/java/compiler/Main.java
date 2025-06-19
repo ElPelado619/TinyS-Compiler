@@ -1,22 +1,46 @@
 package compiler;
 
 import compiler.LexicalAnalyzer.LexicalAnalyzer;
+import compiler.LexicalAnalyzer.LexicalException;
 import compiler.LexicalAnalyzer.Token;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.LinkedList;
 
-//TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
-// click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
 public class Main {
     public static void main(String[] args) throws IOException {
-        execute();
+
+        // execute("src/test/java/fibonacci.s");
+
+        File folder = new File("src/test/lexical/fail");
+        File[] files = folder.listFiles();
+
+        if (files != null) {
+            for (File file : files) {
+                try {
+                    System.out.println(Color.ORANGE_BOLD + "\nAnalizando archivo: " + file.getName() + Color.RESET);
+                    execute(file.getAbsolutePath());
+                } catch (LexicalException e) {
+                    // Print the error message from the LexicalException
+                    System.out.println(Color.RED_BOLD + e.getMessage() + Color.RESET);
+                } catch (FileNotFoundException e) {
+                    // Handle file not found exception
+                    System.out.println(Color.RED_BOLD + "Archivo no encontrado: " + file.getName() + Color.RESET);
+                } catch (IOException e) {
+                    // Handle other IO exceptions
+                    System.out.println(Color.RED_BOLD + "Error de entrada/salida al procesar el archivo: " + file.getName() + Color.RESET);
+                }
+            }
+        } else {
+            System.out.println("No se encontraron archivos en la carpeta especificada.");
+        }
     }
 
     // Create execute method
-    public static void execute() throws FileNotFoundException, IOException {
-        LexicalAnalyzer lexicalAnalyzer = new LexicalAnalyzer("src/test/java/fibonacci.s");
+    public static void execute(String path) throws FileNotFoundException, IOException {
+        LexicalAnalyzer lexicalAnalyzer = new LexicalAnalyzer(path);
 
         // Create a linked list to store tokens
         LinkedList<Token> tokens = new LinkedList<>();

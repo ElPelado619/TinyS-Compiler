@@ -2,7 +2,6 @@ package compiler.LexicalAnalyzer;
 
 import compiler.FileScanner;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -10,7 +9,8 @@ import java.util.Set;
 
 /**
  * Clase LexicalAnalyzer que se encarga de analizar léxicamente un archivo fuente.
- * Esta clase lee el archivo carácter por carácter y genera tokens basados en las reglas del lenguaje.
+ * MODIFICADO: Se ajusta el lanzamiento de excepciones para incluir el lexema inválido
+ * y así soportar el nuevo formato de error.
  */
 public class LexicalAnalyzer {
 
@@ -19,38 +19,36 @@ public class LexicalAnalyzer {
     private int currentCharacter;
     private final StringBuilder currentLexeme = new StringBuilder();
     private final FileScanner fileScanner;
+    private static final int MAX_ID_LENGTH = 1024;
+    private static final int MAX_STRING_LENGTH = 1024;
 
-    /**
-     * Conjunto de palabras clave del lenguaje.
-     * Estas palabras no pueden ser utilizadas como identificadores.
-     */
     private static final Set<String> KEYWORDS = new HashSet<>(Arrays.asList(
             "class", "impl", "else", "false", "if", "ret", "while", "true", "nil", "new",
             "fn", "st", "pub", "self", "div", "void", "start"
     ));
 
-    /**
-     * Constructor que inicializa el analizador léxico.
-     * @param filePath Ruta del archivo a analizar.
-     * @throws FileNotFoundException Si el archivo no se encuentra.
-     */
-    public LexicalAnalyzer(String filePath) throws FileNotFoundException {
+    public LexicalAnalyzer(String filePath) throws IOException {
+        if (!filePath.endsWith(".s")) {
+            // Error de extensión de archivo, el lexema es la ruta del archivo.
+            throw new LexicalException("La extensión del archivo debe ser '.s'", filePath, 0, 0);
+        }
+        this.fileScanner = new FileScanner(filePath);
+        if (fileScanner.isEmpty()) {
+            // Error de archivo vacío, el lexema es la ruta del archivo.
+            throw new LexicalException("El archivo 'tinyS' está vacío", filePath, 0, 0);
+        }
         this.row = 1;
         this.column = 1;
-        this.fileScanner = new FileScanner(filePath);
-        // Empieza leyendo el primer carácter del archivo
         this.currentCharacter = readCharacter();
     }
 
-    /**
-     * Metodo que lee el siguiente carácter del archivo y actualiza la posición de fila y columna.
-     * @return El carácter leído -1 si se ha llegado al final del archivo.
-     */
     private int readCharacter() {
         try {
-            // Lee el siguiente carácter del archivo
             int charRead = fileScanner.readCharacter();
-            // Si es un salto de línea, actualiza la fila y resetea la columna
+            if (charRead > 255) {
+                // Error de símbolo, el lexema es el carácter inválido.
+                throw new LexicalException("Símbolo inválido detectado (fuera de ASCII)", String.valueOf((char) charRead), row, column);
+            }
             if (charRead == '\n') {
                 row++;
                 column = 1;
@@ -59,159 +57,133 @@ public class LexicalAnalyzer {
             }
             return charRead;
         } catch (IOException e) {
-            // Final del archivo o error de lectura
             return -1;
         }
     }
 
-    /**
-     * Metodo que obtiene el siguiente token del archivo.
-     * @return El siguiente token encontrado.
-     */
     public Token nextToken() {
         currentLexeme.setLength(0);
         int initialRow = row;
-        int initialColumn = column - 1;
+        int initialColumn = column > 1 ? column - 1 : 1;
 
-        // Salta espacios en blanco y actualiza la posición
         while (Character.isWhitespace(currentCharacter)) {
             initialRow = row;
             initialColumn = column;
             currentCharacter = readCharacter();
         }
 
-        // Si el carácter actual es -1, significa que hemos llegado al final del archivo
         if (currentCharacter == -1) {
             return new Token("EOF", "", row, column);
         }
 
-        // Añade el carácter actual al lexema
         currentLexeme.append((char) currentCharacter);
+        initialColumn = column -1; // Ajustar la columna inicial al caracter actual
 
-        // caracter -> Mayúscula (idClass)
         if (Character.isUpperCase(currentCharacter)) {
-            return processIdClass();
-        // caracter -> Minúscula (idMetAt)
+            return processIdClass(initialRow, initialColumn);
         } else if (Character.isLowerCase(currentCharacter)) {
-            return processIdMethodAttributeOrKeyword();
-        // caracter -> Comilla (string literal)
+            return processIdMethodAttributeOrKeyword(initialRow, initialColumn);
         } else if (currentCharacter == '"') {
-            return processStringLiteral();
-        // caracter -> / (comentario o división)
+            return processStringLiteral(initialRow, initialColumn);
         } else if (currentCharacter == '/') {
-            return processCommentOrDivision();
-        // caracter -> Signo igual (asignación o comparación)
+            return processCommentOrDivision(initialRow, initialColumn);
         } else if (currentCharacter == '=') {
-            return processEqualsOrAssign();
-        // caracter -> Digito (literal entero o doble)
+            return processEqualsOrAssign(initialRow, initialColumn);
         } else if (Character.isDigit(currentCharacter)) {
-            return processIntOrDoubleLiteral();
-        // caracter -> Menor que (<) o menor o igual que (<=)
+            return processIntOrDoubleLiteral(initialRow, initialColumn);
         } else if (currentCharacter == '<') {
-            return processLessOrLessEqual();
-        // caracter -> Mayor que (>) o mayor o igual que (>=)
+            return processLessOrLessEqual(initialRow, initialColumn);
         } else if (currentCharacter == '>') {
-            return processGreaterOrGreaterEqual();
-        // caracter -> Suma (+) o incremento (++)
+            return processGreaterOrGreaterEqual(initialRow, initialColumn);
         } else if (currentCharacter == '+') {
-            return processAddOrIncrement();
-        // de lo contrario, procesar como un token de un solo carácter
+            return processAddOrIncrement(initialRow, initialColumn);
+        } else if (currentCharacter == '&') {
+            return processAndOperator(initialRow, initialColumn);
+        } else if (currentCharacter == '|') {
+            return processOrOperator(initialRow, initialColumn);
         } else {
             return processSingleCharacterToken(initialRow, initialColumn);
         }
     }
 
-    /**
-     * Procesa un identificador de clase (idClass).
-     * Un idClass comienza con una letra mayúscula y puede contener letras, dígitos o guiones bajos.
-     * @return Un token representando el idClass.
-     */
-    private Token processIdClass() {
-        int initialRow = row;
-        int initialColumn = column - 1;
-        currentCharacter = readCharacter();
-        // Continúa leyendo caracteres mientras sean letras, dígitos o guiones bajos
-        while (Character.isLetterOrDigit(currentCharacter) || currentCharacter == '_') {
-            currentLexeme.append((char) currentCharacter);
-            currentCharacter = readCharacter();
-        }
-        return new Token("idClass", currentLexeme.toString(), initialRow, initialColumn);
-    }
-
-    /**
-     * Procesa un identificador de metodo o atributo (idMetAt).
-     * Un idMetAt comienza con una letra minúscula y puede contener letras, dígitos o guiones bajos.
-     * @return Un token representando el idMetAt.
-     */
-    private Token processIdMethodAttributeOrKeyword() {
-        int initialRow = row;
-        int initialColumn = column - 1;
-
+    private Token processIdClass(int initialRow, int initialColumn) {
         currentCharacter = readCharacter();
         while (Character.isLetterOrDigit(currentCharacter) || currentCharacter == '_') {
+            if (currentLexeme.length() >= MAX_ID_LENGTH) {
+                String lexeme = currentLexeme.append((char) currentCharacter).toString();
+                throw new LexicalException("La longitud del 'idClass' excede los " + MAX_ID_LENGTH + " caracteres", lexeme, initialRow, initialColumn);
+            }
+            if (!Character.isLetter(currentCharacter)) {
+                String lexeme = currentLexeme.append((char) currentCharacter).toString();
+                throw new LexicalException("'idClass' inválido, solo puede contener letras", lexeme, initialRow, initialColumn);
+            }
             currentLexeme.append((char) currentCharacter);
             currentCharacter = readCharacter();
         }
-
-        String lexema = currentLexeme.toString();
-        String nombreToken;
-
-        if (KEYWORDS.contains(lexema)) {
-            nombreToken = lexema;
-        } else {
-            nombreToken = "idMetAt";
+        String lexeme = currentLexeme.toString();
+        if (!Character.isLetter(lexeme.charAt(lexeme.length() - 1))) {
+            throw new LexicalException("'idClass' inválido, debe terminar con una letra", lexeme, initialRow, initialColumn);
         }
-
-        return new Token(nombreToken, lexema, initialRow, initialColumn);
+        return new Token("idClass", lexeme, initialRow, initialColumn);
     }
 
-    /**
-     * Procesa un literal de cadena (string literal).
-     * Un string literal comienza y termina con comillas dobles.
-     * @return Un token representando el string literal.
-     */
-    private Token processStringLiteral() {
-        int initialRow = row;
-        int initialColumn = column - 1;
-        currentLexeme.setLength(0); // Clear the initial quote
+    private Token processIdMethodAttributeOrKeyword(int initialRow, int initialColumn) {
         currentCharacter = readCharacter();
-        while (currentCharacter != '"' && currentCharacter != -1) {
+        while (Character.isLetterOrDigit(currentCharacter) || currentCharacter == '_') {
+            if (currentLexeme.length() >= MAX_ID_LENGTH) {
+                String lexeme = currentLexeme.append((char) currentCharacter).toString();
+                throw new LexicalException("La longitud del 'idMetAt' excede los " + MAX_ID_LENGTH + " caracteres", lexeme, initialRow, initialColumn);
+            }
             currentLexeme.append((char) currentCharacter);
             currentCharacter = readCharacter();
         }
-        if (currentCharacter == '"') {
-            currentCharacter = readCharacter(); // Consume the closing quote
+        String lexeme = currentLexeme.toString();
+        if (Character.isLetterOrDigit(currentCharacter) || currentCharacter == '_') {
+            String invalidLexeme = lexeme + (char) currentCharacter;
+            throw new LexicalException("'idMetAt' inválido, contiene un símbolo no permitido", invalidLexeme, initialRow, initialColumn);
+        }
+        String tokenType = KEYWORDS.contains(lexeme) ? lexeme : "idMetAt";
+        return new Token(tokenType, lexeme, initialRow, initialColumn);
+    }
+
+    private Token processStringLiteral(int initialRow, int initialColumn) {
+        currentLexeme.setLength(0);
+        currentCharacter = readCharacter();
+        while (currentCharacter != '"') {
+            if (currentCharacter == -1 || currentCharacter == '\0') {
+                throw new LexicalException("String inválido, se encontró EOF o NUL", "\"" + currentLexeme.toString(), initialRow, initialColumn);
+            }
+            if (currentCharacter == '\n') {
+                throw new LexicalException("String sin cerrar, salto de línea encontrado", "\"" + currentLexeme.toString(), initialRow, initialColumn);
+            }
+            if (currentLexeme.length() >= MAX_STRING_LENGTH) {
+                String lexeme = currentLexeme.append((char) currentCharacter).toString();
+                throw new LexicalException("La longitud del string excede los " + MAX_STRING_LENGTH + " caracteres", "\"" + lexeme + "...", initialRow, initialColumn);
+            }
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
+        }
+        currentCharacter = readCharacter();
+        if (currentLexeme.isEmpty()) {
+            throw new LexicalException("El string está vacío", "\"\"", initialRow, initialColumn);
         }
         return new Token("StrLiteral", currentLexeme.toString(), initialRow, initialColumn);
     }
 
-    /**
-     * Procesa un comentario o un operador de división.
-     * Si encuentra un '/', verifica si es el inicio de un comentario de una línea o de varias líneas.
-     * @return Un token representando el comentario o el operador de división.
-     */
-    private Token processCommentOrDivision() {
-        int initialRow = row;
-        int initialColumn = column - 1;
+    private Token processCommentOrDivision(int initialRow, int initialColumn) {
         currentCharacter = readCharacter();
         if (currentCharacter == '/') {
-            return processSingleLineComment(initialRow, initialColumn);
+            processSingleLineComment(initialRow, initialColumn);
+            return nextToken();
         } else if (currentCharacter == '*') {
-            return processMultiLineComment(initialRow, initialColumn);
+            processMultiLineComment(initialRow, initialColumn);
+            return nextToken();
         } else {
-            // If it's just a '/', it could be a division operator or an unknown token
             return new Token("op_div", "/", initialRow, initialColumn);
         }
     }
 
-    /**
-     * Procesa un operador de igualdad o asignación.
-     * Si encuentra un '=', verifica si es el inicio de una comparación de igualdad.
-     * @return Un token representando el operador de igualdad o asignación.
-     */
-    private Token processEqualsOrAssign() {
-        int initialRow = row;
-        int initialColumn = column - 1;
+    private Token processEqualsOrAssign(int initialRow, int initialColumn) {
         currentCharacter = readCharacter();
         if (currentCharacter == '=') {
             currentLexeme.append((char) currentCharacter);
@@ -222,48 +194,37 @@ public class LexicalAnalyzer {
         }
     }
 
-    /**
-     * Procesa un literal entero o de punto flotante.
-     * Un literal entero consiste en dígitos, mientras que un literal de punto flotante
-     * contiene un punto decimal seguido de más dígitos.
-     * @return Un token representando el literal entero o de punto flotante.
-     */
-    private Token processIntOrDoubleLiteral() {
-        int initialRow = row;
-        int initialColumn = column - 1;
+    private Token processIntOrDoubleLiteral(int initialRow, int initialColumn) {
         boolean isDouble = false;
-
         currentCharacter = readCharacter();
-        // Read digits
         while (Character.isDigit(currentCharacter)) {
             currentLexeme.append((char) currentCharacter);
             currentCharacter = readCharacter();
         }
-
-        // Check for decimal point
         if (currentCharacter == '.') {
             isDouble = true;
             currentLexeme.append((char) currentCharacter);
             currentCharacter = readCharacter();
-            // Read digits after decimal point
+            if (!Character.isDigit(currentCharacter)) {
+                throw new LexicalException("Literal doble inválido, falta la parte fraccionaria", currentLexeme.toString(), initialRow, initialColumn);
+            }
             while (Character.isDigit(currentCharacter)) {
                 currentLexeme.append((char) currentCharacter);
                 currentCharacter = readCharacter();
             }
+            if (currentCharacter == '.') {
+                throw new LexicalException("Literal doble inválido, múltiples puntos decimales", currentLexeme.toString() + ".", initialRow, initialColumn);
+            }
         }
-
+        if (Character.isLetter(currentCharacter)) {
+            String lexeme = currentLexeme.append((char) currentCharacter).toString();
+            throw new LexicalException("Literal numérico inválido", lexeme, initialRow, initialColumn);
+        }
         String tokenType = isDouble ? "doubleLiteral" : "intLiteral";
         return new Token(tokenType, currentLexeme.toString(), initialRow, initialColumn);
     }
 
-    /**
-     * Procesa un operador de menor o menor que.
-     * Si encuentra un '<', verifica si es el inicio de una comparación de menor o menor o igual.
-     * @return Un token representando el operador de menor o menor que.
-     */
-    private Token processLessOrLessEqual() {
-        int initialRow = row;
-        int initialColumn = column - 1;
+    private Token processLessOrLessEqual(int initialRow, int initialColumn) {
         currentCharacter = readCharacter();
         if (currentCharacter == '=') {
             currentLexeme.append((char) currentCharacter);
@@ -274,14 +235,7 @@ public class LexicalAnalyzer {
         }
     }
 
-    /**
-     * Procesa un operador de mayor o mayor que.
-     * Si encuentra un '>', verifica si es el inicio de una comparación de mayor o mayor o igual.
-     * @return Un token representando el operador de mayor o mayor que.
-     */
-    private Token processGreaterOrGreaterEqual() {
-        int initialRow = row;
-        int initialColumn = column - 1;
+    private Token processGreaterOrGreaterEqual(int initialRow, int initialColumn) {
         currentCharacter = readCharacter();
         if (currentCharacter == '=') {
             currentLexeme.append((char) currentCharacter);
@@ -292,14 +246,7 @@ public class LexicalAnalyzer {
         }
     }
 
-    /**
-     * Procesa un operador de suma o incremento.
-     * Si encuentra un '+', verifica si es el inicio de un operador de incremento.
-     * @return Un token representando el operador de suma o incremento.
-     */
-    private Token processAddOrIncrement() {
-        int initialRow = row;
-        int initialColumn = column - 1;
+    private Token processAddOrIncrement(int initialRow, int initialColumn) {
         currentCharacter = readCharacter();
         if (currentCharacter == '+') {
             currentLexeme.append((char) currentCharacter);
@@ -310,70 +257,86 @@ public class LexicalAnalyzer {
         }
     }
 
-    /**
-     * Procesa un comentario de una sola línea.
-     * Un comentario de una sola línea comienza con "//" y termina con un salto de línea.
-     * @return Un token representando el comentario de una sola línea.
-     */
-    private Token processSingleLineComment(int initialRow, int initialColumn) {
-        currentLexeme.append('/');
+    private Token processAndOperator(int initialRow, int initialColumn) {
         currentCharacter = readCharacter();
-        while (currentCharacter != '\n' && currentCharacter != -1) {
+        if (currentCharacter == '&') {
             currentLexeme.append((char) currentCharacter);
             currentCharacter = readCharacter();
+            return new Token("andOp", "&&", initialRow, initialColumn);
+        } else {
+            throw new LexicalException("Operación 'and' inválida, se esperaba '&&'", "&", initialRow, initialColumn);
         }
-        return new Token("SingleLineComment", currentLexeme.toString(), initialRow, initialColumn);
     }
 
-    /**
-     * Procesa un comentario de varias líneas.
-     * Un comentario de varias líneas comienza con / * y termina con * /
-     * @return Un token representando el comentario de varias líneas.
-     */
-    private Token processMultiLineComment(int initialRow, int initialColumn) {
-        currentLexeme.append('*');
+    private Token processOrOperator(int initialRow, int initialColumn) {
+        currentCharacter = readCharacter();
+        if (currentCharacter == '|') {
+            currentLexeme.append((char) currentCharacter);
+            currentCharacter = readCharacter();
+            return new Token("orOp", "||", initialRow, initialColumn);
+        } else {
+            throw new LexicalException("Operación 'or' inválida, se esperaba '||'", "|", initialRow, initialColumn);
+        }
+    }
+
+    private void processSingleLineComment(int initialRow, int initialColumn) {
+        while (currentCharacter != '\n' && currentCharacter != -1) {
+            if (currentCharacter > 255) {
+                throw new LexicalException("Comentario inválido, contiene caracteres no ASCII", String.valueOf((char) currentCharacter), row, column);
+            }
+            currentCharacter = readCharacter();
+        }
+    }
+
+    private void processMultiLineComment(int initialRow, int initialColumn) {
         currentCharacter = readCharacter();
         while (true) {
+            if (currentCharacter > 255) {
+                throw new LexicalException("Comentario inválido, contiene caracteres no ASCII", String.valueOf((char) currentCharacter), row, column);
+            }
             if (currentCharacter == -1) {
-                // Unterminated comment
-                return new Token("UNKNOWN", currentLexeme.toString(), initialRow, initialColumn);
+                throw new LexicalException("Comentario de varias líneas sin cerrar", "/*", initialRow, initialColumn);
             }
             if (currentCharacter == '*') {
-                currentLexeme.append((char) currentCharacter);
                 currentCharacter = readCharacter();
                 if (currentCharacter == '/') {
-                    currentLexeme.append((char) currentCharacter);
                     currentCharacter = readCharacter();
-                    return new Token("MultiLineComment", currentLexeme.toString(), initialRow, initialColumn);
+                    return;
                 }
             } else {
-                currentLexeme.append((char) currentCharacter);
                 currentCharacter = readCharacter();
             }
         }
     }
 
-    /**
-     * Procesa un token de un solo carácter.
-     * Dependiendo del carácter, devuelve el token correspondiente.
-     * @param initialRow Fila inicial del token.
-     * @param initialColumn Columna inicial del token.
-     * @return Un token representando el carácter leído.
-     */
     private Token processSingleCharacterToken(int initialRow, int initialColumn) {
         char character = (char) currentCharacter;
         currentCharacter = readCharacter();
         return switch (character) {
-            case '(' -> new Token("lParen", "(", initialRow, initialColumn);
-            case ')' -> new Token("rParen", ")", initialRow, initialColumn);
-            case '{' -> new Token("lBrace", "{", initialRow, initialColumn);
-            case '}' -> new Token("rBrace", "}", initialRow, initialColumn);
-            case '[' -> new Token("lBracket", "[", initialRow, initialColumn);
-            case ']' -> new Token("rBracket", "]", initialRow, initialColumn);
-            case ',' -> new Token("comma", ",", initialRow, initialColumn);
-            case ';' -> new Token("semicolon", ";", initialRow, initialColumn);
-            case '.' -> new Token("dot", ".", initialRow, initialColumn);
-            default -> new Token("UNKNOWN", String.valueOf(character), initialRow, initialColumn);
+            case '(', ')', '{', '}', '[', ']', ',', ';', '.', '-', '*', '!' ->
+                // Token de un solo carácter válido, no necesita una lógica compleja aquí
+                    new Token(getTokenTypeForChar(character), String.valueOf(character), initialRow, initialColumn);
+            default ->
+                // Error de símbolo, el lexema es el propio carácter no reconocido.
+                    throw new LexicalException("Símbolo no pertenece al lenguaje", String.valueOf(character), initialRow, initialColumn);
+        };
+    }
+
+    private String getTokenTypeForChar(char c) {
+        return switch (c) {
+            case '(' -> "lParen";
+            case ')' -> "rParen";
+            case '{' -> "lBrace";
+            case '}' -> "rBrace";
+            case '[' -> "lBracket";
+            case ']' -> "rBracket";
+            case ',' -> "comma";
+            case ';' -> "semicolon";
+            case '.' -> "dot";
+            case '-' -> "subOp";
+            case '*' -> "mulOp";
+            case '!' -> "notOp";
+            default -> "UNKNOWN";
         };
     }
 }
