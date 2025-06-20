@@ -20,7 +20,8 @@ public class FileScanner {
 
     /**
      * Reads a line from the file.
-     * @return The line read from the file, or null if the end of the file is reached.
+     * @return The line read from the file,
+     * or null if the end of the file is reached.
      * @throws IOException If an I/O error occurs.
      */
     public boolean isEmpty() throws IOException {

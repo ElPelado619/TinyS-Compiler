@@ -20,26 +20,36 @@ public class Main {
         if (files != null) {
             for (File file : files) {
                 try {
-                    System.out.println(Color.ORANGE_BOLD + "\nAnalizando archivo: " + file.getName() + Color.RESET);
+                    System.out.println(Color.ORANGE_BOLD
+                            + "\nAnalizando archivo: " + file.getName()
+                            + Color.RESET);
                     execute(file.getAbsolutePath());
                 } catch (LexicalException e) {
                     // Print the error message from the LexicalException
-                    System.out.println(Color.RED_BOLD + e.getMessage() + Color.RESET);
+                    System.out.println(Color.RED_BOLD
+                            + e.getMessage()
+                            + Color.RESET);
                 } catch (FileNotFoundException e) {
                     // Handle file not found exception
-                    System.out.println(Color.RED_BOLD + "Archivo no encontrado: " + file.getName() + Color.RESET);
+                    System.out.println(Color.RED_BOLD
+                            + "Archivo no encontrado: " + file.getName()
+                            + Color.RESET);
                 } catch (IOException e) {
                     // Handle other IO exceptions
-                    System.out.println(Color.RED_BOLD + "Error de entrada/salida al procesar el archivo: " + file.getName() + Color.RESET);
+                    System.out.println(Color.RED_BOLD
+                            + "Error de entrada/salida al procesar el archivo: "
+                            + file.getName() + Color.RESET);
                 }
             }
         } else {
-            System.out.println("No se encontraron archivos en la carpeta especificada.");
+            System.out.println(
+                    "No se encontraron archivos en la carpeta especificada.");
         }
     }
 
     // Create execute method
-    public static void execute(String path) throws FileNotFoundException, IOException {
+    public static void execute(String path)
+            throws FileNotFoundException, IOException {
         LexicalAnalyzer lexicalAnalyzer = new LexicalAnalyzer(path);
 
         // Create a linked list to store tokens

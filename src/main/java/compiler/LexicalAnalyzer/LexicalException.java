@@ -29,8 +29,8 @@ public class LexicalException extends RuntimeException {
     public String getMessage() {
         return String.format(
                 "ERROR: LEXICO\n" +
-                        "| NUMERO DE LINEA (NUMERO DE COLUMNA) | DESCRIPCION: |\n" +
-                        "| LINEA %d (COLUMNA %d) | %s: %s",
+                "| NUMERO DE LINEA (NUMERO DE COLUMNA) | DESCRIPCION: |\n" +
+                "| LINEA %d (COLUMNA %d) | %s: %s",
                 this.row, this.column, this.errorMessage, this.invalidLexeme
         );
     }
